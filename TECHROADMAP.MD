@@ -15,17 +15,25 @@ This project is a Unity-based, Docker-deployed server-client system that process
      - Go to **Edit > Project Settings > Player > Resolution and Presentation**.
      - Enable **Run in Background** and remove unnecessary graphics settings.
 
-2. **Implement Basic REST API Structure**
-   - Choose your API framework:
-     - **ASP.NET Core** or **Node.js** for a standalone API, or
-     - **UnityWebRequest** or `Best HTTP/2` plugin within Unity.
-   - Define API routes:
-     - `/parseBlueprint` for parsing requests.
-     - `/status` for server status checks.
+2. **Implement Basic HTTP Server using HttpListener**
+   - Create a new C# script (e.g., `HttpServer.cs`) to handle HTTP requests.
+   - Implement the server using `System.Net.HttpListener`:
+     - Set up the listener to handle incoming connections.
+     - Create a separate thread for listening to avoid blocking the main Unity thread.
+     - Implement methods to start and stop the server.
+   - Define routes for different endpoints (e.g., `/parseBlueprint`, `/status`).
 
 3. **Create Request and Response Handlers**
-   - Implement `BlueprintRequestHandler` to receive images and return matrix or error responses.
-   - Test locally with a REST client (e.g., Postman) to confirm request handling.
+   - Implement request handling logic in the `HttpServer` class:
+     - Parse incoming requests and route them to appropriate handlers.
+     - Create separate methods for handling different types of requests (e.g., blueprint parsing, status checks).
+   - Implement `BlueprintRequestHandler` to process images and return matrix or error responses.
+   - Ensure proper error handling and response formatting.
+
+4. **Test Local Server Functionality**
+   - Use web browsers, cURL, or other HTTP clients to test the server locally.
+   - Verify that all endpoints are accessible and responding correctly.
+   - Test with sample blueprint images to ensure basic parsing functionality.
 
 ---
 

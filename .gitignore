@@ -2,23 +2,20 @@
 [Ll]ibrary/
 [Tt]emp/
 [Oo]bj/
-[Bb]uild/
-[Bb]uilds/
 [Ll]ogs/
 [Mm]emoryCaptures/
 userSettings/
 .vscode/
-
+*.meta
 # OS generated files
 .DS_Store
 Thumbs.db
 
-# Docker files
-docker-compose.yml
-Dockerfile
-
 # Visual Studio Code settings
 .vscode/
+.vsconfig
 
-# Ignore roadmap and notes, keeping them clean in the repo
-*.md
+#ignore .sln and .csproj files and cursorrules
+.cursorrules
+*.sln
+*.csproj
