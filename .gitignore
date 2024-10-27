@@ -1,0 +1,24 @@
+# Unity generated files
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Mm]emoryCaptures/
+userSettings/
+.vscode/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Docker files
+docker-compose.yml
+Dockerfile
+
+# Visual Studio Code settings
+.vscode/
+
+# Ignore roadmap and notes, keeping them clean in the repo
+*.md
