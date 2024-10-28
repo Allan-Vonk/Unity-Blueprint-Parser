@@ -11,10 +11,12 @@ public class BlueprintParser
     {
         Debug.Log("BlueprintParser constructor called");
     }
-    public byte[] ParseBlueprintImage(string fileId, float blackWhiteThreshold, int erodeIterations, int dilateIterations)
+    public byte[] ParseBlueprintImage(MemoryStream fileStream, float blackWhiteThreshold, int erodeIterations, int dilateIterations)
     {
-        ImageLoader imageLoader = new ImageLoader();
-        Texture2D texture = imageLoader.LoadImage(fileId);
+        // Load the image from the MemoryStream
+        byte[] imageData = fileStream.ToArray();
+        Texture2D texture = new Texture2D(2, 2);
+        texture.LoadImage(imageData);
 
         Color[] pixels = texture.GetPixels();
         int width = texture.width;
@@ -46,19 +48,21 @@ public class BlueprintParser
             dilatedData = Dilate(ref dilatedData, ref kernel);
         }
         
+        #region Save and Delete Image Files
         //Save the eroded data as a jpeg file
-        SaveMatrixAsJpeg(dilatedData, Path.Combine(Application.persistentDataPath, $"blueprint_image_{fileId}_filtered.jpeg"));
+        //SaveMatrixAsJpeg(dilatedData, Path.Combine(Application.persistentDataPath, $"blueprint_image_{fileId}_filtered.jpeg"));
         
-        string imagePath = Path.Combine(Application.persistentDataPath, $"blueprint_image_{fileId}.jpeg");
-        if (File.Exists(imagePath))
-        {
-            File.Delete(imagePath);
-            Debug.Log("Deleted image file: " + imagePath);
+        //string imagePath = Path.Combine(Application.persistentDataPath, $"blueprint_image_{fileId}.jpeg");
+        //if (File.Exists(imagePath))
+        //{
+        //    File.Delete(imagePath);
+        //    Debug.Log("Deleted image file: " + imagePath);
 
-            string colorFilePath = Path.Combine(Application.persistentDataPath, $"blueprint_image_{fileId}.color");
-            string colorString = $"{averageColor.r},{averageColor.g},{averageColor.b},{averageColor.a}";
-            File.WriteAllText(colorFilePath, colorString);
-        }
+        //    string colorFilePath = Path.Combine(Application.persistentDataPath, $"blueprint_image_{fileId}.color");
+        //    string colorString = $"{averageColor.r},{averageColor.g},{averageColor.b},{averageColor.a}";
+        //    File.WriteAllText(colorFilePath, colorString);
+        //}
+        #endregion
 
         return EncodeMatrixAsJpeg(dilatedData);
     }
