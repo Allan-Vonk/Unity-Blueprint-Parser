@@ -4,6 +4,15 @@ using System.Threading;
 using UnityEngine;
 using System.IO;
 using System.Collections.Generic;
+using System.Threading.Tasks;
+public struct BlueprintParseRequest
+{
+    public string fileId;
+    public float blackWhiteThreshold;
+    public int erodeIterations;
+    public int dilateIterations;
+    public byte[] matrix;
+}
 
 public class HttpServer : MonoBehaviour
 {
@@ -11,16 +20,17 @@ public class HttpServer : MonoBehaviour
     private Thread listenerThread;
     private bool isRunning = false;
     private string dataPath;
-    private Queue<string> fileQueue = new Queue<string>();
+    private Queue<Task<BlueprintParseRequest>> fileQueue = new Queue<Task<BlueprintParseRequest>>();
     private object queueLock = new object();
     private BlueprintParser blueprintParser = new BlueprintParser();
     [SerializeField] Color averageColor;
 
-    public void QueueFile(string fileId)
+    public Task<BlueprintParseRequest> QueueFile(Task<BlueprintParseRequest> request)
     {
         lock (queueLock)
         {
-            fileQueue.Enqueue(fileId);
+            fileQueue.Enqueue(request);
+            return request;
         }
     }
 
@@ -31,17 +41,17 @@ public class HttpServer : MonoBehaviour
         {
             while (fileQueue.Count > 0)
             {
-                string fileId = fileQueue.Dequeue();
-                ProcessFile(fileId);
+                Task<BlueprintParseRequest> request = fileQueue.Dequeue();
+                request.RunSynchronously();
             }
         }
     }
 
-    private void ProcessFile(string fileId)
+    private void ProcessFile(ref BlueprintParseRequest request)
     {
-        Debug.Log("Processing file with ID: " + fileId);
-        Color color = blueprintParser.ParseBlueprintImage(fileId);
-        averageColor = color;
+        Debug.Log("Processing file with ID: " + request.fileId);
+        byte[] matrix = blueprintParser.ParseBlueprintImage(request.fileId, request.blackWhiteThreshold, request.erodeIterations, request.dilateIterations);
+        request.matrix = matrix;
     }
     private void Start()
     {
@@ -110,7 +120,7 @@ public class HttpServer : MonoBehaviour
             }
         }
     }
-    private void HandleRequest(object state)
+    private async void HandleRequest(object state)
     {
         HttpListenerContext context = (HttpListenerContext)state;
         HttpListenerRequest request = context.Request;
@@ -121,10 +131,32 @@ public class HttpServer : MonoBehaviour
         switch (request.Url.AbsolutePath)
         {
             //Example query: curl -X POST -H "Content-Type: image/jpeg" --data-binary @C:\Users\Allan\Downloads\Blueprint.jpg http://localhost:8080/parseBlueprint  
+            //example query with parameters: curl -X POST -H "Content-Type: image/jpeg" --data-binary @C:\Users\Allan\Downloads\Blueprint.jpg http://localhost:8080/parseBlueprint?blackWhiteThreshold=-0.1&erodeIterations=2&dilateIterations=2 
             case "/parseBlueprint":
-                string ID = UploadBlueprintImage(request, response);
-                QueueFile(ID);
-                responseString = ID;
+                float blackWhiteThreshold = request.QueryString["blackWhiteThreshold"] != null ? float.Parse(request.QueryString["blackWhiteThreshold"]) : -0.1f;
+                int erodeIterations = request.QueryString["erodeIterations"] != null ? int.Parse(request.QueryString["erodeIterations"]) : 2;
+                int dilateIterations = request.QueryString["dilateIterations"] != null ? int.Parse(request.QueryString["dilateIterations"]) : 2;
+                Task<BlueprintParseRequest> parseRequest = QueueFile(new Task<BlueprintParseRequest>(() => {
+                    string ID = UploadBlueprintImage(request, response);
+                    BlueprintParseRequest parseRequest = new BlueprintParseRequest{fileId = ID, blackWhiteThreshold = blackWhiteThreshold, erodeIterations = erodeIterations, dilateIterations = dilateIterations};
+                    ProcessFile(ref parseRequest);
+                    return parseRequest;
+                }));
+                
+                //Return the parserequest matrix as a jpeg
+                try{
+                    BlueprintParseRequest parseRequestResult = await parseRequest;
+                    Debug.Log("Returning matrix as jpeg");
+                    response.ContentType = "image/jpeg";
+                    Debug.Log(parseRequestResult.fileId + " " + (parseRequestResult.matrix == null));
+                    response.ContentLength64 = parseRequestResult.matrix.Length;
+                    Debug.Log("Content length: " + parseRequestResult.matrix.Length);
+                    response.OutputStream.Write(parseRequestResult.matrix, 0, parseRequestResult.matrix.Length);
+                    response.Close();
+                }
+                catch (Exception e){
+                    Debug.LogError("Error returning matrix as jpeg: " + e);
+                }
                 break;
             //Example query: curl http://localhost:8080/retrieveColor?fileId=11964a2c-8b05-4b93-becb-fb0551881e34
             case "/retrieveColor":
@@ -139,8 +171,8 @@ public class HttpServer : MonoBehaviour
                 responseString = "404 - Not Found";
                 break;
         }
-
-        byte[] buffer = System.Text.Encoding.UTF8.GetBytes(responseString);
+        //Write error to the response if nothing else was handled   
+        byte[] buffer = System.Text.Encoding.UTF8.GetBytes("ERROR");
 
         response.ContentLength64 = buffer.Length;
         response.OutputStream.Write(buffer, 0, buffer.Length);
@@ -162,11 +194,11 @@ public class HttpServer : MonoBehaviour
                 string imagePath = Path.Combine(dataPath, fileName);
                 File.WriteAllBytes(imagePath, imageBytes);
 
-                //Response to the client
-                response.StatusCode = (int)HttpStatusCode.OK;
-                byte[] buffer = System.Text.Encoding.UTF8.GetBytes(uniqueID);
-                response.ContentLength64 = buffer.Length;
-                response.OutputStream.Write(buffer, 0, buffer.Length);
+                // // Respond to the client with the unique ID of the uploaded image
+                // response.StatusCode = (int)HttpStatusCode.OK;
+                // byte[] buffer = System.Text.Encoding.UTF8.GetBytes(uniqueID);
+                // response.ContentLength64 = buffer.Length;
+                // response.OutputStream.Write(buffer, 0, buffer.Length);
                 return uniqueID;
             }
         }
@@ -177,12 +209,10 @@ public class HttpServer : MonoBehaviour
             byte[] buffer = System.Text.Encoding.UTF8.GetBytes($"Error uploading image: {e.Message}");
             response.ContentLength64 = buffer.Length;
             response.OutputStream.Write(buffer, 0, buffer.Length);
+            response.Close();
             return null;
         }
-        finally
-        {
-            response.Close();
-        }
+
     }
     private string RetrieveColor(HttpListenerRequest request, HttpListenerResponse response){
         try{
