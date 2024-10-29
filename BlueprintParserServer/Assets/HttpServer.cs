@@ -20,7 +20,6 @@ public class HttpServer : MonoBehaviour
     private HttpListener listener;
     private Thread listenerThread;
     private bool isRunning = false;
-    private string dataPath;
     private ConcurrentQueue<Task<BlueprintParseRequest>> parseRequestQueue = new ConcurrentQueue<Task<BlueprintParseRequest>>();
     private BlueprintParser blueprintParser = new BlueprintParser();
 
@@ -47,7 +46,6 @@ public class HttpServer : MonoBehaviour
 
     private void StartServer()
     {
-        dataPath = Application.persistentDataPath;
         if (!isRunning)
         {
             listener = new HttpListener();

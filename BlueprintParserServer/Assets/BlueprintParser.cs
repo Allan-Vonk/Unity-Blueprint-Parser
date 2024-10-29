@@ -128,11 +128,6 @@ public class BlueprintParser
         byte[] bytes = texture.EncodeToJPG();
         return bytes;
     }
-    private void SaveMatrixAsJpeg(bool[,] matrix, string filePath)
-    {
-        byte[] bytes = EncodeMatrixAsJpeg(matrix);
-        File.WriteAllBytes(filePath, bytes);
-    }
     private bool[,] Erode(ref bool[,] matrix, ref bool[,] kernel)
     {
         int height = matrix.GetLength(0);
