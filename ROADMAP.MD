@@ -9,27 +9,27 @@ The Unity server-client system parses black-and-white blueprint images into 2D m
 ## Milestones
 
 ### Phase 1: Core Setup and Blueprint Parsing
-- [ ] **Set up Unity project** with headless mode and core components.
+- [x] **Set up Unity project** with headless mode and core components.
 - [ ] **Implement HLSL compute shader** to parse blueprint images into binary matrices (e.g., `1` for walls, `0` for empty spaces).
   - [ ] Define image processing parameters (resolution, wall/space threshold, etc.).
-- [ ] **Create a REST API structure**:
-  - [ ] Design API endpoints for sending blueprint images and retrieving 2D matrix data.
-  - [ ] Implement request handling within Unity or link to a lightweight HTTP server.
+- [x] **Create a REST API structure**:
+  - [x] Design API endpoints for sending blueprint images and retrieving 2D matrix data.
+  - [x] Implement request handling within Unity or link to a lightweight HTTP server.
 
 ### Phase 2: Docker Integration and Parallel Request Handling
-- [ ] **Dockerize the Unity server**:
-  - [ ] Write a Dockerfile with headless Unity configuration.
-  - [ ] Ensure GPU access with NVIDIA Docker (Container Toolkit).
+- [x] **Dockerize the Unity server**:
+  - [x] Write a Dockerfile with headless Unity configuration.
+  - [x] Ensure GPU access with NVIDIA Docker (Container Toolkit).
   - [ ] Test HLSL shader functionality inside Docker.
-- [ ] **Implement parallel request processing**:
-  - [ ] Use async or coroutines to handle concurrent API requests.
-  - [ ] Verify each request is processed statelessly and does not interfere with others.
+- [x] **Implement parallel request processing**:
+  - [x] Use async or coroutines to handle concurrent API requests.
+  - [x] Verify each request is processed statelessly and does not interfere with others.
 
 ### Phase 3: Scalability and Orchestration
 - [ ] **Set up Docker Compose** or **Kubernetes** for scaling:
   - [ ] Define service configurations for deploying multiple containers.
   - [ ] Set up load balancing to distribute client requests across instances.
-- [ ] **Implement request queuing or buffering** (if necessary) to handle high volumes of incoming requests.
+- [x] **Implement request queuing or buffering** (if necessary) to handle high volumes of incoming requests.
 
 ### Phase 4: Future Expansion - Mesh Generation
 - [ ] **Convert matrix data into 3D mesh structures**:

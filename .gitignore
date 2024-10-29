@@ -5,6 +5,7 @@
 [Ll]ogs/
 [Mm]emoryCaptures/
 userSettings/
+.obsidian/
 .vscode/
 *.meta
 Journals/
