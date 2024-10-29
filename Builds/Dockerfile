@@ -13,8 +13,6 @@ RUN apt-get update && apt-get install -y \
     libsm6 \
     libxext6 \
     libxrender1 \
-    libvulkan1 \
-    vulkan-utils \
     && rm -rf /var/lib/apt/lists/*
 
 
