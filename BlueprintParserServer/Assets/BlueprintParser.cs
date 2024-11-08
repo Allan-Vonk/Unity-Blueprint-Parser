@@ -7,6 +7,8 @@ public class BlueprintParser
     bool[,] kernel = new bool[,] { {true, true, true},
                                   {true, true, true}, 
                                   {true, true, true} };
+    //Documentation for this file
+    
     public BlueprintParser()
     {
         Debug.Log("BlueprintParser constructor called");
@@ -33,15 +35,15 @@ public class BlueprintParser
         }
 
         Color averageColor = GetAverageColor(pixels);
-        bool[,] filteredData = FilterToBlackWhite(pixelData, averageColor, blackWhiteThreshold);
+        sbyte[,] filteredData = FilterToBlackWhite(pixelData, averageColor, blackWhiteThreshold);
         
-        bool[,] erodedData = filteredData;
+        sbyte[,] erodedData = filteredData;
         for (int i = 0; i < erodeIterations; i++)
         {
             Debug.Log("Eroding data");
             erodedData = Erode(ref erodedData, ref kernel);
         }
-        bool[,] dilatedData = erodedData;
+        sbyte[,] dilatedData = erodedData;
         for (int i = 0; i < dilateIterations; i++)
         {
             Debug.Log("Dilating data");
@@ -66,13 +68,13 @@ public class BlueprintParser
 
         return EncodeMatrixAsJpeg(dilatedData);
     }
-    private Color GetAverageColor(Color[] colors)
+    public Color GetAverageColor(Color[] colors)
     {
         // Initialize color components
         float r = 0f, g = 0f, b = 0f, a = 0f;
 
         // Sum all color components
-        foreach (var color in colors)
+        foreach (Color color in colors)
         {
             r += color.r;
             g += color.g;
@@ -84,11 +86,11 @@ public class BlueprintParser
         int count = colors.Length;
         return new Color(r / count, g / count, b / count, a / count);
     }
-    private bool[,] FilterToBlackWhite(Color[,] pixelData, Color averageColor, float threshold)
+    public sbyte[,] FilterToBlackWhite(Color[,] pixelData, Color averageColor, float threshold)
     {
         int width = pixelData.GetLength(0);
         int height = pixelData.GetLength(1);
-        bool[,] filteredData = new bool[width, height];
+        sbyte[,] filteredData = new sbyte[width, height];
 
         for (int y = 0; y < height; y++)
         {
@@ -100,18 +102,21 @@ public class BlueprintParser
 
                 if (brightness < averageBrightness + threshold)
                 {
-                    filteredData[x, y] = true;
+                    //Wall
+                    filteredData[x, y] = -1;
                 }
                 else
                 {
-                    filteredData[x, y] = false;
+                    //Not wall
+                    filteredData[x, y] = 0;
                 }
             }
         }
 
         return filteredData;
     }
-    private byte[] EncodeMatrixAsJpeg(bool[,] matrix){
+    private byte[] EncodeMatrixAsJpeg(sbyte[,] matrix)
+    {
         int width = matrix.GetLength(0);
         int height = matrix.GetLength(1);
         Texture2D texture = new Texture2D(width, height);
@@ -120,7 +125,7 @@ public class BlueprintParser
         {
             for (int x = 0; x < width; x++)
             {
-                texture.SetPixel(x, y, matrix[x, y] ? Color.black : Color.white);
+                texture.SetPixel(x, y, (matrix[x, y] == -1) ? Color.black : Color.white);
             }
         }
 
@@ -128,7 +133,7 @@ public class BlueprintParser
         byte[] bytes = texture.EncodeToJPG();
         return bytes;
     }
-    private bool[,] Erode(ref bool[,] matrix, ref bool[,] kernel)
+    private sbyte[,] Erode(ref sbyte[,] matrix, ref bool[,] kernel)
     {
         int height = matrix.GetLength(0);
         int width = matrix.GetLength(1);
@@ -136,7 +141,7 @@ public class BlueprintParser
         int kernelWidth = kernel.GetLength(1);
         int backgroundPixels = 0;
 
-        bool[,] erodedMatrix = new bool[height, width];
+        sbyte[,] erodedMatrix = new sbyte[height, width];
 
         int offsetX = kernelWidth / 2;
         int offsetY = kernelHeight / 2;
@@ -160,7 +165,8 @@ public class BlueprintParser
                         {
                             continue; //ignore pixels outside the matrix
                         }
-                        if (kernel[ky, kx] && !matrix[matrixY, matrixX])
+                        //is not wall
+                        if (kernel[ky, kx] && matrix[matrixY, matrixX] == 0)
                         {
                             isForeground = false;
                             break;
@@ -170,11 +176,13 @@ public class BlueprintParser
                 }
                 if (isForeground)
                 {
-                    erodedMatrix[y, x] = true;
+                    //set wall
+                    erodedMatrix[y, x] = -1;
                 }
                 else
                 {
-                    erodedMatrix[y, x] = false;
+                    //set not wall
+                    erodedMatrix[y, x] = 0;
                     backgroundPixels++;
                 }
             }
@@ -182,7 +190,7 @@ public class BlueprintParser
         Debug.Log("Background pixels: " + backgroundPixels);
         return erodedMatrix;
     }
-    private bool[,] Dilate(ref bool[,] matrix, ref bool[,] kernel)
+    private sbyte[,] Dilate(ref sbyte[,] matrix, ref bool[,] kernel) 
     {
         int height = matrix.GetLength(0);
         int width = matrix.GetLength(1);
@@ -190,7 +198,7 @@ public class BlueprintParser
         int kernelWidth = kernel.GetLength(1);
         int foregroundPixels = 0;
 
-        bool[,] dilatedMatrix = new bool[height, width];
+        sbyte[,] dilatedMatrix = new sbyte[height, width];
 
         int offsetX = kernelWidth / 2;
         int offsetY = kernelHeight / 2;
@@ -215,7 +223,7 @@ public class BlueprintParser
                             continue; // Ignore pixels outside the matrix
                         }
                         // If the kernel is foreground and the corresponding matrix pixel is foreground
-                        if (kernel[ky, kx] == true && matrix[matrixY, matrixX] == true)
+                        if (kernel[ky, kx] == true && matrix[matrixY, matrixX] == -1)
                         {
                             isBackground = false; // Set to foreground if any part of the kernel overlaps with a foreground pixel
                             break; // No need to check further
@@ -226,12 +234,12 @@ public class BlueprintParser
 
                 if (!isBackground)
                 {
-                    dilatedMatrix[y, x] = true;
+                    dilatedMatrix[y, x] = -1;
                     foregroundPixels++;
                 }
                 else
                 {
-                    dilatedMatrix[y, x] = false;
+                    dilatedMatrix[y, x] = 0;
                 }
             }
         }

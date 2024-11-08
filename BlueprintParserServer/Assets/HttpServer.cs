@@ -14,6 +14,17 @@ public struct BlueprintParseRequest
     public int dilateIterations;
     public byte[] matrix;
 }
+public struct RouteRequest {
+    public Vector2Int startNode;
+    public Vector2Int endNode;
+    public MemoryStream blueprintMatrix;
+    public Vector2IntArrayWrapper path;
+}
+[System.Serializable]
+public class Vector2IntArrayWrapper 
+{
+    public Vector2Int[] path;
+}
 
 public class HttpServer : MonoBehaviour
 {
@@ -21,7 +32,10 @@ public class HttpServer : MonoBehaviour
     private Thread listenerThread;
     private bool isRunning = false;
     private ConcurrentQueue<Task<BlueprintParseRequest>> parseRequestQueue = new ConcurrentQueue<Task<BlueprintParseRequest>>();
+    private ConcurrentQueue<Task<RouteRequest>> routeRequestQueue = new ConcurrentQueue<Task<RouteRequest>>();
     private BlueprintParser blueprintParser = new BlueprintParser();
+
+    [SerializeField] Texture2D image;
 
     private void Update()
     {
@@ -29,6 +43,12 @@ public class HttpServer : MonoBehaviour
         while (parseRequestQueue.Count > 0)
         {
             if (parseRequestQueue.TryDequeue(out Task<BlueprintParseRequest> request)){
+                request.RunSynchronously();
+            }
+        }
+        while (routeRequestQueue.Count > 0)
+        {
+            if (routeRequestQueue.TryDequeue(out Task<RouteRequest> request)){
                 request.RunSynchronously();
             }
         }
@@ -60,11 +80,56 @@ public class HttpServer : MonoBehaviour
         }
     }
 
-    private void ProcessFile(ref BlueprintParseRequest request)
+    private void ProcessBlueprint(ref BlueprintParseRequest request)
     {
         byte[] matrix = blueprintParser.ParseBlueprintImage(request.fileStream, request.blackWhiteThreshold, request.erodeIterations, request.dilateIterations);
         request.matrix = matrix;
     }
+    private int Get1DIndex(Vector2Int pos, int width){
+        return pos.x + pos.y * width;
+    }
+    private void ProcessRoute(ref RouteRequest request)
+    {
+        //Implement route finding here
+        //preferably in another file with a* and hlsl
+        request.path = new Vector2IntArrayWrapper{path = new Vector2Int[]{request.startNode, request.endNode}};
+        byte[] imageData = request.blueprintMatrix.ToArray();
+        Texture2D texture = new Texture2D(2, 2);
+        texture.LoadImage(imageData);
+
+        Color[] pixels = texture.GetPixels();
+        Color[,] pixelData = new Color[texture.width, texture.height];
+        //Convert 1D array to 2D array  
+        // TODO: maybe rework so it just acceses the 1d array with a function that converts 2d coordinates to 1d then we can rework the image.setpixels
+        for (int y = 0; y < texture.height; y++)
+        {
+            for (int x = 0; x < texture.width; x++)
+            {
+                pixelData[x, y] = pixels[y * texture.width + x];
+            }
+        }
+        Color averageColor = blueprintParser.GetAverageColor(pixels);
+
+        sbyte[,] matrix = blueprintParser.FilterToBlackWhite(pixelData, averageColor, 0f);
+        uint[,] distanceMatrix = new uint[matrix.GetLength(0), matrix.GetLength(1)];
+
+        try{    
+            distanceMatrix = FloodFill.FloodFillMatrix(ref matrix, request.startNode);
+        }
+        catch (Exception e){
+            Debug.LogError("Error in FloodFill: " + e);
+        }
+        //convert distance matrix to a texture 2d, the max value is 1200, so we need to map them to correctly fit the color range
+        image = new Texture2D(distanceMatrix.GetLength(0), distanceMatrix.GetLength(1));
+        for (int y = 0; y < distanceMatrix.GetLength(1); y++){
+            for (int x = 0; x < distanceMatrix.GetLength(0); x++){
+                image.SetPixel(x, y, new Color(distanceMatrix[x, y] / 1200f, 0, 0));
+            }
+        }
+        image.Apply();
+        request.path = new Vector2IntArrayWrapper{path = new Vector2Int[]{request.startNode, request.endNode}};
+    }
+
 
     private void StopServer()
     {
@@ -106,7 +171,7 @@ public class HttpServer : MonoBehaviour
         switch (request.Url.AbsolutePath)
         {
             //Example query: curl -X POST -H "Content-Type: image/jpeg" --data-binary @C:\Users\Allan\Downloads\Blueprint.jpg http://localhost:8080/parseBlueprint -o C:\Users\Allan\Downloads\Output.jpg
-            //example query with parameters: curl -X POST -H "Content-Type: image/jpeg" --data-binary @C:\Users\Allan\Downloads\Blueprint.jpg http://localhost:8080/parseBlueprint?blackWhiteThreshold=-0.1&erodeIterations=2&dilateIterations=2 
+            //example query with parameters: curl -X POST -H "Content-Type: image/jpeg" --data-binary @C:\Users\Allan\Downloads\Blueprint.jpg "http://localhost:8080/parseBlueprint?blackWhiteThreshold=-0.1&erodeIterations=2&dilateIterations=2" -o C:\Users\Allan\Downloads\Output.jpg
             case "/parseBlueprint":
                 //Get the parameters from the query string
                 float blackWhiteThreshold = request.QueryString["blackWhiteThreshold"] != null ? float.Parse(request.QueryString["blackWhiteThreshold"]) : -0.1f;
@@ -119,7 +184,7 @@ public class HttpServer : MonoBehaviour
                     MemoryStream imageStream = GetImageStream(request);
 
                     BlueprintParseRequest parseRequest = new BlueprintParseRequest{fileStream = imageStream, blackWhiteThreshold = blackWhiteThreshold, erodeIterations = erodeIterations, dilateIterations = dilateIterations};
-                    ProcessFile(ref parseRequest);
+                    ProcessBlueprint(ref parseRequest);
 
                     return parseRequest;
                 });
@@ -139,6 +204,32 @@ public class HttpServer : MonoBehaviour
                 catch (Exception e){
                     Debug.LogError("Error returning matrix as jpeg: " + e);
                 }
+                break;
+            //Example query: curl -X POST -H "Content-Type: image/jpeg" --data-binary @C:\Users\Allan\Downloads\Blueprint.jpg http://localhost:8080/getRoute?startNode=0,0&endNode=10,10    
+            case "/getRoute":
+                Task<RouteRequest> routeRequestTask = new Task<RouteRequest>(() => {
+                    MemoryStream imageStream = GetImageStream(request);
+                    RouteRequest routeRequest = new RouteRequest{startNode = ParseVector2Int(request.QueryString["startNode"]), endNode = ParseVector2Int(request.QueryString["endNode"]), blueprintMatrix = imageStream};
+                    ProcessRoute(ref routeRequest);
+                    return routeRequest;
+                });
+                routeRequestQueue.Enqueue(routeRequestTask);
+                try{
+                    RouteRequest routeRequestResult = await routeRequestTask;
+                    string jsonPath = JsonUtility.ToJson(routeRequestResult.path);
+                    byte[] jsonBytes = System.Text.Encoding.UTF8.GetBytes(jsonPath);
+
+                    response.ContentType = "application/json";
+                    response.ContentLength64 = jsonBytes.Length;
+                    response.OutputStream.Write(jsonBytes, 0, jsonBytes.Length);
+                    response.Close();
+
+                }
+                catch (Exception e){
+                    Debug.LogError("Error returning route: " + e);
+                }
+
+
                 break;
             case "/status":
                 responseString = "Server is running";
@@ -160,6 +251,12 @@ public class HttpServer : MonoBehaviour
             request.InputStream.CopyTo(memoryStream);
             return memoryStream;
         }
+    }
+    private Vector2Int ParseVector2Int(string value)
+    {
+        string[] parts = value.Split(',');
+        Vector2Int pos = new Vector2Int(int.Parse(parts[0]), int.Parse(parts[1]));
+        return pos;
     }
     #region UploadBlueprintImage
     // private string UploadBlueprintImage(HttpListenerRequest request, HttpListenerResponse response)
