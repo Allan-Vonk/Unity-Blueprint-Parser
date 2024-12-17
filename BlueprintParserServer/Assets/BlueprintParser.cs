@@ -66,7 +66,7 @@ public class BlueprintParser
         //}
         #endregion
 
-        return EncodeMatrixAsJpeg(dilatedData);
+        return EncodeMatrixAsPNG(dilatedData);
     }
     public Color GetAverageColor(Color[] colors)
     {
@@ -115,7 +115,7 @@ public class BlueprintParser
 
         return filteredData;
     }
-    private byte[] EncodeMatrixAsJpeg(sbyte[,] matrix)
+    private byte[] EncodeMatrixAsPNG(sbyte[,] matrix)
     {
         int width = matrix.GetLength(0);
         int height = matrix.GetLength(1);
@@ -130,7 +130,7 @@ public class BlueprintParser
         }
 
         texture.Apply();
-        byte[] bytes = texture.EncodeToJPG();
+        byte[] bytes = texture.EncodeToPNG();
         return bytes;
     }
     private sbyte[,] Erode(ref sbyte[,] matrix, ref bool[,] kernel)

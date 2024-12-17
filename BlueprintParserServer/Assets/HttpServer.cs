@@ -1,3 +1,4 @@
+//HttpServer.cs
 using System;
 using System.Net;
 using System.Threading;
@@ -12,13 +13,16 @@ public struct BlueprintParseRequest
     public float blackWhiteThreshold;
     public int erodeIterations;
     public int dilateIterations;
-    public byte[] matrix;
+    public byte[] matrixAsPNG;
 }
 public struct RouteRequest {
     public Vector2Int startNode;
     public Vector2Int endNode;
     public MemoryStream blueprintMatrix;
     public Vector2IntArrayWrapper path;
+    public uint[,] distanceMatrix;
+    public byte[] matrixTexturePNGEncoded;
+
 }
 [System.Serializable]
 public class Vector2IntArrayWrapper 
@@ -83,7 +87,7 @@ public class HttpServer : MonoBehaviour
     private void ProcessBlueprint(ref BlueprintParseRequest request)
     {
         byte[] matrix = blueprintParser.ParseBlueprintImage(request.fileStream, request.blackWhiteThreshold, request.erodeIterations, request.dilateIterations);
-        request.matrix = matrix;
+        request.matrixAsPNG = matrix;
     }
     private int Get1DIndex(Vector2Int pos, int width){
         return pos.x + pos.y * width;
@@ -123,14 +127,15 @@ public class HttpServer : MonoBehaviour
         image = new Texture2D(distanceMatrix.GetLength(0), distanceMatrix.GetLength(1));
         for (int y = 0; y < distanceMatrix.GetLength(1); y++){
             for (int x = 0; x < distanceMatrix.GetLength(0); x++){
-                image.SetPixel(x, y, new Color(distanceMatrix[x, y] / 1200f, 0, 0));
+                image.SetPixel(x, y, new Color(distanceMatrix[x, y] / 1200f, (distanceMatrix[x,y]==0) ? 1 : 0, 0));
             }
         }
         image.Apply();
+        request.distanceMatrix = distanceMatrix;
+        request.matrixTexturePNGEncoded = image.EncodeToPNG();
+        //Calculate path trough the distance matrix
         request.path = new Vector2IntArrayWrapper{path = new Vector2Int[]{request.startNode, request.endNode}};
     }
-
-
     private void StopServer()
     {
         if (isRunning)
@@ -149,6 +154,7 @@ public class HttpServer : MonoBehaviour
             try
             {
                 HttpListenerContext context = listener.GetContext();
+                Debug.Log(context);
                 ThreadPool.QueueUserWorkItem(HandleRequest, context);
             }
             catch (Exception e)
@@ -162,16 +168,29 @@ public class HttpServer : MonoBehaviour
     }
     private async void HandleRequest(object state)
     {
+        Debug.Log("request received");
         HttpListenerContext context = (HttpListenerContext)state;
         HttpListenerRequest request = context.Request;
         HttpListenerResponse response = context.Response;
+
+        // Set CORS headers
+        response.Headers.Add("Access-Control-Allow-Origin", "*");
+        response.Headers.Add("Access-Control-Allow-Headers", "*");
+        response.Headers.Add("Access-Control-Allow-Methods", "*");
+        Debug.Log(response.Headers);
+        if (request.HttpMethod == "OPTIONS")
+        {
+            response.StatusCode = (int)HttpStatusCode.OK;
+            response.Close();
+            return; // Exit early for OPTIONS requests
+        }
 
         string responseString;
         // Handle different paths /parseBlueprint, /status
         switch (request.Url.AbsolutePath)
         {
-            //Example query: curl -X POST -H "Content-Type: image/jpeg" --data-binary @C:\Users\Allan\Downloads\Blueprint.jpg http://localhost:8080/parseBlueprint -o C:\Users\Allan\Downloads\Output.jpg
-            //example query with parameters: curl -X POST -H "Content-Type: image/jpeg" --data-binary @C:\Users\Allan\Downloads\Blueprint.jpg "http://localhost:8080/parseBlueprint?blackWhiteThreshold=-0.1&erodeIterations=2&dilateIterations=2" -o C:\Users\Allan\Downloads\Output.jpg
+            //Example query: curl -X POST -H "Content-Type: image/png" --data-binary @C:\Users\Allan\Downloads\Blueprint.jpg http://localhost:8080/parseBlueprint -o C:\Users\Allan\Downloads\Output.png
+            //example query with parameters: curl -X POST -H "Content-Type: image/png" --data-binary @C:\Users\Allan\Downloads\Blueprint.jpg "http://localhost:8080/parseBlueprint?blackWhiteThreshold=-0.1&erodeIterations=2&dilateIterations=2" -o C:\Users\Allan\Downloads\Output.png
             case "/parseBlueprint":
                 //Get the parameters from the query string
                 float blackWhiteThreshold = request.QueryString["blackWhiteThreshold"] != null ? float.Parse(request.QueryString["blackWhiteThreshold"]) : -0.1f;
@@ -194,18 +213,20 @@ public class HttpServer : MonoBehaviour
                 //Return the parserequest matrix as a jpeg
                 try{
                     BlueprintParseRequest parseRequestResult = await parseRequestTask;
-                    Debug.Log("Returning matrix as jpeg");
+                    Debug.Log("Returning matrix as png");
 
-                    response.ContentType = "image/jpeg";
-                    response.ContentLength64 = parseRequestResult.matrix.Length;
-                    response.OutputStream.Write(parseRequestResult.matrix, 0, parseRequestResult.matrix.Length);
+                    response.ContentType = "image/png";
+                    response.ContentLength64 = parseRequestResult.matrixAsPNG.Length;
+                    response.OutputStream.Write(parseRequestResult.matrixAsPNG, 0, parseRequestResult.matrixAsPNG.Length);
                     response.Close();
                 }
                 catch (Exception e){
-                    Debug.LogError("Error returning matrix as jpeg: " + e);
+                    Debug.LogError("Error returning matrix as PNG: " + e);
+                    response.StatusCode = (int)HttpStatusCode.InternalServerError; // Set status code on error
+                    responseString = "Error processing request."; // Prepare error message
                 }
                 break;
-            //Example query: curl -X POST -H "Content-Type: image/jpeg" --data-binary @C:\Users\Allan\Downloads\Blueprint.jpg http://localhost:8080/getRoute?startNode=0,0&endNode=10,10    
+            //Example query: curl -X POST --data-binary @C:\Users\Allan\Downloads\Blueprint.jpg "http://localhost:8080/getRoute?startNode=0,0&endNode=10,10"    
             case "/getRoute":
                 Task<RouteRequest> routeRequestTask = new Task<RouteRequest>(() => {
                     MemoryStream imageStream = GetImageStream(request);
@@ -228,9 +249,30 @@ public class HttpServer : MonoBehaviour
                 catch (Exception e){
                     Debug.LogError("Error returning route: " + e);
                 }
-
-
                 break;
+            //Example query: curl -X POST -H "Content-Type: image/png" --data-binary @C:\Users\Allan\Downloads\Output.png "http://localhost:8080/getDistanceMap?startNode=0,0&endNode=10,10" -o C:\Users\Allan\Downloads\DistanceMap.png
+            case "/getDistanceMap":
+                Task<RouteRequest> distanceMapRequest = new Task<RouteRequest>(() => {
+                    MemoryStream imageStream = GetImageStream(request);
+                    RouteRequest routeRequest = new RouteRequest{startNode = ParseVector2Int(request.QueryString["startNode"]), endNode = ParseVector2Int(request.QueryString["endNode"]), blueprintMatrix = imageStream};
+                    ProcessRoute(ref routeRequest);
+                    return routeRequest;
+                });
+                routeRequestQueue.Enqueue(distanceMapRequest);
+
+                try{
+                    RouteRequest routeRequestResult = await distanceMapRequest;
+                    
+                    response.ContentType = "image/png";
+                    response.ContentLength64 = routeRequestResult.matrixTexturePNGEncoded.Length;
+                    response.OutputStream.Write(routeRequestResult.matrixTexturePNGEncoded, 0, routeRequestResult.matrixTexturePNGEncoded.Length);
+                    response.Close();
+                }
+                catch (Exception e){
+                    Debug.LogError("Error returning distance map: " + e);
+                }
+                break;
+
             case "/status":
                 responseString = "Server is running";
                 break;
