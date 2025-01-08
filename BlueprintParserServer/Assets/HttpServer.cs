@@ -123,16 +123,19 @@ public class HttpServer : MonoBehaviour
         catch (Exception e){
             Debug.LogError("Error in FloodFill: " + e);
         }
-        //convert distance matrix to a texture 2d, the max value is 1200, so we need to map them to correctly fit the color range
-        image = new Texture2D(distanceMatrix.GetLength(0), distanceMatrix.GetLength(1));
-        for (int y = 0; y < distanceMatrix.GetLength(1); y++){
-            for (int x = 0; x < distanceMatrix.GetLength(0); x++){
-                image.SetPixel(x, y, new Color(distanceMatrix[x, y] / 1200f, (distanceMatrix[x,y]==0) ? 1 : 0, 0));
+        // Put the distancematrix in a png, spread out across all 4 channels
+        Texture2D distanceTexture = new Texture2D(distanceMatrix.GetLength(0), distanceMatrix.GetLength(1), TextureFormat.RGBA32, false);
+        for (int y = 0; y < distanceMatrix.GetLength(1); y++)
+        {
+            for (int x = 0; x < distanceMatrix.GetLength(0); x++)
+            {
+                distanceTexture.SetPixel(x, y, new Color32((byte)(distanceMatrix[x, y] >> 24), (byte)(distanceMatrix[x, y] >> 16), (byte)(distanceMatrix[x, y] >> 8), (byte)distanceMatrix[x, y]));
             }
         }
-        image.Apply();
-        request.distanceMatrix = distanceMatrix;
-        request.matrixTexturePNGEncoded = image.EncodeToPNG();
+        distanceTexture.Apply();
+        byte[] distanceMatrixPNG = distanceTexture.EncodeToPNG();
+        request.matrixTexturePNGEncoded = distanceMatrixPNG;
+        image = distanceTexture;
         //Calculate path trough the distance matrix
         request.path = new Vector2IntArrayWrapper{path = new Vector2Int[]{request.startNode, request.endNode}};
     }
@@ -146,7 +149,6 @@ public class HttpServer : MonoBehaviour
             Debug.Log("HttpServer stopped");
         }
     }
-
     private void ListenForConnections()
     {
         while (isRunning)
